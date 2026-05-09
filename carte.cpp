@@ -37,6 +37,14 @@ int carte::getCouleur() const {
 	return this->couleur;
 }
 
+int carte::getValeur() const {
+	return this->valeur;
+}
+
+int carte::getId() const {
+	return this->id;
+}
+
 void carte::jouer() {
 	std::cout << "La carte tirée est : " << getNomValeur() << " de " << getNomCouleur() << std::endl;
 }

@@ -15,7 +15,9 @@ class carte{
         void jouer();
         std::string getNomValeur() const;
         std::string getNomCouleur() const;
+        int getValeur() const;
         int getCouleur() const;
+        int getId() const;
 };
 
 #endif
