@@ -19,7 +19,7 @@ void Game::configurerFinPartieMulti(std::string& titre, std::string& detail, sf:
 }
 
 void Game::renderScoreSelonMode() {
-    if (estModeMultiMaison()) {
+    if (estModeMultijoueur()) {
         sf::Text txtScoreJ1(font, "J1: " + std::to_string(scoreJ1), 22);
         txtScoreJ1.setFillColor({255, 230, 160});
         txtScoreJ1.setPosition({610.f, 40.f});

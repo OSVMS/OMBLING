@@ -1,24 +1,22 @@
 #include "game.h"
 
 void Game::appliquerScoreJoueurSelonMode() {
-    if (estModeMultiMaison()) {
-        if (derniersPoints > 0) {
-            if (joueurCourant == 1) {
-                scoreJ1 += derniersPoints;
-            } else {
-                scoreJ2 += derniersPoints;
-            }
+    if (estModeMultijoueur()) {
+        if (joueurCourant == 1) {
+            scoreJ1 += derniersPoints;
+        } else {
+            scoreJ2 += derniersPoints;
+        }
+        if (derniersPoints >= 0) {
             dernierResultat = "J" + std::to_string(joueurCourant) + " : Reussi +" + std::to_string(derniersPoints) + " pts";
         } else {
-            dernierResultat = "J" + std::to_string(joueurCourant) + " : Rate +0 pt";
+            dernierResultat = "J" + std::to_string(joueurCourant) + " : Rate " + std::to_string(derniersPoints) + " pts";
         }
         joueurCourant = (joueurCourant == 1) ? 2 : 1;
         return;
     }
 
-    if (derniersPoints > 0) {
-        score += derniersPoints;
-    }
+    score += derniersPoints;
 }
 
 void Game::configurerTitreSelonMode() {
@@ -33,8 +31,13 @@ void Game::configurerTitreSelonMode() {
         return;
     }
 
-    if (estModeMultiMaison()) {
+    if (estModeMultijoueurMaison()) {
         txtTitre->setString("Multijoueur Maison");
+        return;
+    }
+
+    if (estModeMultijoueurOnline()) {
+        txtTitre->setString("Multijoueur Online");
         return;
     }
 

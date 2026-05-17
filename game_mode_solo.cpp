@@ -36,12 +36,13 @@ void Game::appliquerTourSolo() {
         return;
     }
 
+    const int pointsIA = PredictionEngine::points(predictionIA);
     if (predictionReussie(predictionIA)) {
-        const int pointsIA = PredictionEngine::points(predictionIA);
         scoreIA += pointsIA;
         dernierResultatIA = "IA " + PredictionEngine::name(predictionIA) + ": Reussi +" + std::to_string(pointsIA);
     } else {
-        dernierResultatIA = "IA " + PredictionEngine::name(predictionIA) + ": Rate +0";
+        scoreIA -= pointsIA;
+        dernierResultatIA = "IA " + PredictionEngine::name(predictionIA) + ": Rate " + std::to_string(-pointsIA) + " pts";
     }
 }
 

@@ -7,7 +7,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSFML_DIR="D:\libs\SFML-3.1.0\lib\cmake\SFML"
 if errorlevel 1 exit /b 1
 
 cmake --build build --config Release

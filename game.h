@@ -3,6 +3,7 @@
 #include "carte.h"
 #include "prediction_engine.h"
 #include <SFML/Graphics.hpp>
+#include <SFML/Network.hpp>
 #include <array>
 #include <deque>
 #include <optional>
@@ -20,6 +21,9 @@ private:
         Menu,
         MenuSolo,
         MenuMulti,
+        MenuMultiOnline,
+        MenuDeck,
+        OnlineWaiting,
         Jeu,
         FinPartie
     };
@@ -29,7 +33,63 @@ private:
         SoloFacile,
         SoloMoyen,
         SoloDifficile,
-        MultiMaison
+        MultiMaison,
+        MultiOnlineHost,
+        MultiOnlineClient
+    };
+
+    enum class DeckType {
+        Classic,
+        Malediction,
+        Benit,
+        Divin,
+        Enfer,
+    };
+
+    enum class JokerAction {
+        None,
+        X2,
+        Next,
+        Mix,
+        Vision,
+        Tirage,
+        Retry,
+        Swap,
+        Plus5,
+        Minus5,
+    };
+
+    enum class SpecialCardType {
+        None,
+        Grace,
+        Maudit,
+        Double,
+        Nul,
+        Plus10,
+        Minus10,
+    };
+
+    struct PlayerState {
+        int score = 0;
+        int successStreak = 0;
+        bool immunity = false;
+        int multiplier = 1;
+        int temporaryModifier = 0;
+        int extraDraws = 0;
+        bool skipNextTurn = false;
+        bool retryAvailable = false;
+        int revealedCardId = 0;
+        int lastScoreDelta = 0;
+        std::vector<JokerAction> jokers;
+        std::vector<SpecialCardType> specialCards;
+    };
+
+    struct DeckDefinition {
+        DeckType type;
+        const char* label;
+        int bonusCount;
+        int malusCount;
+        int jokerCount;
     };
 
     static constexpr int kDeckSize = 52;
@@ -90,6 +150,19 @@ private:
     std::optional<sf::Text> txtMultiInternet;
     std::optional<sf::Text> txtMultiRetour;
 
+    sf::RectangleShape btnOnlineHost{{300.f, 58.f}};
+    sf::RectangleShape btnOnlineJoin{{300.f, 58.f}};
+    sf::RectangleShape btnOnlineBack{{180.f, 45.f}};
+    sf::RectangleShape btnOnlineIp{{300.f, 48.f}};
+    sf::RectangleShape btnOnlinePort{{300.f, 48.f}};
+    std::optional<sf::Text> txtOnlineHost;
+    std::optional<sf::Text> txtOnlineJoin;
+    std::optional<sf::Text> txtOnlineBack;
+    std::optional<sf::Text> txtOnlineTitle;
+    std::optional<sf::Text> txtOnlineIpLabel;
+    std::optional<sf::Text> txtOnlinePortLabel;
+    std::optional<sf::Text> txtOnlineConnectionStatus;
+
     sf::RectangleShape btnQuitter{{160.f, 55.f}};
     std::optional<sf::Text> txtQuitter;
     std::optional<sf::Text> txtTitre;
@@ -113,6 +186,10 @@ private:
     PredictionType predictionIA = PredictionType::Couleur;
     PredictionType dernierePredictionIA = PredictionType::Couleur;
     ModeJeu modeJeu = ModeJeu::PartieTest;
+    DeckType deckSelection = DeckType::Classic;
+    ModeJeu prochaineMode = ModeJeu::PartieTest;
+    Ecran ecranApresDeck = Ecran::Menu;
+    PlayerState players[2];
     int score = 0;
     int scoreIA = 0;
     int scoreJ1 = 0;
@@ -122,9 +199,16 @@ private:
     std::string dernierResultat = "Choisis une prediction puis tire 2 cartes";
     std::string dernierResultatIA = "IA en attente";
     int suiteStreakIA = 0;
+    std::array<bool, kPredictionCount> predictionSelected{};
 
     std::array<sf::RectangleShape, kPredictionCount> btnPredictions;
     std::array<std::optional<sf::Text>, kPredictionCount> txtPredictions;
+
+    sf::RectangleShape btnDeckOptions[6];
+    std::array<std::optional<sf::Text>, 6> txtDeckOptions;
+    std::optional<sf::Text> txtDeckTitle;
+    std::optional<sf::Text> txtDeckInfo;
+    int selectionDeck = 0;
     carte paquet[kDeckSize];
     std::mt19937 rng{std::random_device{}()};
     int index = 0;
@@ -135,10 +219,22 @@ private:
 
     std::string baseDir;
 
+    sf::TcpListener listener;
+    sf::TcpSocket socket;
+    bool onlineHost = false;
+    bool onlineSocketConnected = false;
+    bool onlineAwaitingHost = false;
+    bool onlineWaitingForDeck = false;
+    std::string onlineIp = "127.0.0.1";
+    std::string onlinePort = "55001";
+    int selectionOnline = 0;
+    int myPlayerNumber = 1;
+
     std::string asset(const std::string& rel) const;
     std::string cheminCarte(const carte& c) const;
     bool loadAssets();
     void setupUi();
+    void setupDeckMenuUi();
     void setupPredictionUi();
     void reinitialiserPartie();
     void demarrerPartie(ModeJeu mode);
@@ -150,6 +246,15 @@ private:
     void preparerTourSolo();
     void appliquerScoreJoueurSelonMode();
     void appliquerTourSolo();
+    void assignPlayerDeck();
+    void assignPlayerJokers(int playerIndex);
+    void assignPlayerSpecialCards(int playerIndex);
+    void appliquerPredictionPourJoueur(int playerIndex);
+    void appliquerTourEffectifs(int playerIndex);
+    void togglePredictionSelection(int index);
+    void updateDeckInfoText();
+    void useJoker(JokerAction action);
+    void afficherJokersEtInstructions();
     void configurerTitreSelonMode();
     void configurerFinPartieSolo(std::string& titre, std::string& detail, sf::Color& couleur) const;
     void configurerFinPartieMulti(std::string& titre, std::string& detail, sf::Color& couleur) const;
@@ -167,6 +272,9 @@ private:
     void renderMenu();
     void renderMenuSolo();
     void renderMenuMulti();
+    void renderMenuDeck();
+    void renderMenuMultiOnline();
+    void renderOnlineWaiting();
     void renderJeu();
     void renderScoreSelonMode();
     void renderResultatSecondaireSelonMode();
@@ -174,7 +282,24 @@ private:
     void updateMenuHighlight();
     void updateSoloHighlight();
     void updateMultiHighlight();
+    void updateDeckHighlight();
+    void updateOnlineHighlight();
     void updatePredictionHighlight();
     void updateJeuHighlight();
     void updateFinPartieHighlight();
+
+    bool estModeMultijoueur() const;
+    bool estModeMultijoueurMaison() const;
+    bool estModeMultijoueurOnline() const;
+    void handleTextEntered(const sf::Event::TextEntered& text);
+    bool startOnlineHost(const std::string& port);
+    bool startOnlineClient(const std::string& ip, const std::string& port);
+    void resetOnlineSession();
+    void processNetworkEvents();
+    void processPacket(sf::Packet& packet);
+    void processRemoteAction(int joueur, int predictionIndex);
+    void processRemoteMoveExecution(int joueur, int predictionIndex, int cardIdA, int cardIdB);
+    bool sendDeck();
+    bool sendExecuteMove(int joueur, int predictionIndex, int cardIdA, int cardIdB);
+    bool sendMoveRequest(int predictionIndex);
 };
