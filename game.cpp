@@ -9,8 +9,36 @@
 #include <filesystem>
 #include <optional>
 
+// Retourne le label court d'un joker pour l'affichage bouton
+std::string Game::jokerLabel(JokerAction a) {
+    auto joker = createJokerEffect(a);
+    return joker ? joker->label() : "?";
+}
+
+// Calcule la zone (FloatRect) d'un bouton joker a l'indice i
+sf::FloatRect Game::jokerButtonBounds(int i) {
+    return { {510.f, 130.f + static_cast<float>(i) * 42.f}, {155.f, 34.f} };
+}
+
+Game::Game() : turnResolver(*this), inputController(*this), renderController(*this) {}
+
 bool Game::initialize(char* argv[]) {
-    baseDir = std::filesystem::canonical(argv[0]).parent_path().string();
+    std::filesystem::path exeDir = std::filesystem::canonical(argv[0]).parent_path();
+    std::filesystem::path resolvedBase = exeDir;
+
+    // Cherche un dossier asset a partir du dossier de l'executable,
+    // puis remonte dans les parents (utile pour build_macos/app).
+    for (std::filesystem::path p = exeDir; !p.empty(); p = p.parent_path()) {
+        if (std::filesystem::exists(p / "asset")) {
+            resolvedBase = p;
+            break;
+        }
+        if (p == p.parent_path()) {
+            break;
+        }
+    }
+
+    baseDir = resolvedBase.string();
 
     window.setFramerateLimit(60);
     window.setView(vue);
@@ -63,11 +91,7 @@ void Game::setupPredictionUi() {
 }
 
 void Game::memoriserCarteVue(int id) {
-    cartesVues.push_back(id);
-    cartesVues10.push_back(id);
-    if (cartesVues10.size() > 10) {
-        cartesVues10.pop_front();
-    }
+    turnResolver.memoriserCarteVue(id);
 }
 
 std::vector<int> Game::cartesConnuesIA() const {
@@ -81,43 +105,7 @@ std::vector<int> Game::cartesConnuesIA() const {
 }
 
 void Game::tirerDeuxCartes() {
-    if (fin || index + 2 > kDeckSize) {
-        fin = true;
-        return;
-    }
-
-    preparerTourSolo();
-
-    cartes[0] = &paquet[index];
-    cartes[1] = &paquet[index + 1];
-    memoriserCarteVue(cartes[0]->getId());
-    memoriserCarteVue(cartes[1]->getId());
-    index += 2;
-
-    if (index >= kDeckSize) {
-        fin = true;
-    }
-
-    if (joueurCourant >= 1 && joueurCourant <= 2) {
-        players[joueurCourant - 1].revealedCardId = 0;
-    }
-
-    appliquerPrediction();
-    appliquerScoreJoueurSelonMode();
-    appliquerTourSolo();
-
-    if (joueurCourant >= 1 && joueurCourant <= 2) {
-        auto& state = players[joueurCourant - 1];
-        if (state.extraDraws > 0 && !fin) {
-            state.extraDraws -= 1;
-            tirerDeuxCartes();
-            return;
-        }
-    }
-
-    if (fin) {
-        terminerPartie();
-    }
+    turnResolver.tirerDeuxCartes();
 }
 
 bool Game::predictionReussie(PredictionType type) const {
@@ -148,6 +136,9 @@ bool Game::loadAssets() {
 
     bool fontLoaded = false;
     for (const auto& path : candidates) {
+        if (!std::filesystem::exists(path)) {
+            continue;
+        }
         if (font.openFromFile(path)) {
             fontLoaded = true;
             break;
@@ -388,11 +379,11 @@ void Game::setupDeckMenuUi() {
     }
 
     const std::array<std::string, 5> labels = {
-        "Classic: 5 bonus, 5 malus, 2 jokers",
-        "Malediction: 10 malus, 2 jokers",
-        "Benit: 10 bonus, 2 jokers",
-        "Divin: 2 bonus, 2 malus, 3 jokers",
-        "Enfer: 8 bonus, 8 malus, 1 joker"
+        "Classic: 2 jokers",
+        "Malediction: 2 jokers",
+        "Benit: 2 jokers",
+        "Divin: 3 jokers",
+        "Enfer: 1 joker"
     };
 
     for (int i = 0; i < 5; ++i) {
@@ -423,11 +414,11 @@ void Game::setupDeckMenuUi() {
 
 void Game::updateDeckInfoText() {
     const std::array<std::string, 5> descriptions = {
-        "Classic: 5 bonus, 5 malus, 2 jokers.",
-        "Malediction: 10 malus, 2 jokers.",
-        "Benit: 10 bonus, 2 jokers.",
-        "Divin: 2 bonus, 2 malus, 3 jokers.",
-        "Enfer: 8 bonus, 8 malus, 1 joker."
+        "Classic: 2 jokers.",
+        "Malediction: 2 jokers.",
+        "Benit: 2 jokers.",
+        "Divin: 3 jokers.",
+        "Enfer: 1 joker."
     };
     if (selectionDeck >= 0 && selectionDeck < 5) {
         txtDeckInfo->setString(descriptions[selectionDeck]);
@@ -503,221 +494,44 @@ void Game::assignPlayerJokers(int playerIndex) {
 
 void Game::assignPlayerSpecialCards(int playerIndex) {
     auto& state = players[playerIndex];
+    // Cartes speciales desactivees.
     state.specialCards.clear();
-    int bonusCount = 5;
-    int malusCount = 5;
-    switch (deckSelection) {
-        case DeckType::Classic: bonusCount = 5; malusCount = 5; break;
-        case DeckType::Malediction: bonusCount = 0; malusCount = 10; break;
-        case DeckType::Benit: bonusCount = 10; malusCount = 0; break;
-        case DeckType::Divin: bonusCount = 2; malusCount = 2; break;
-        case DeckType::Enfer: bonusCount = 8; malusCount = 8; break;
-    }
-    std::vector<SpecialCardType> bonusPool = {
-        SpecialCardType::Grace,
-        SpecialCardType::Double,
-        SpecialCardType::Plus10
-    };
-    std::vector<SpecialCardType> malusPool = {
-        SpecialCardType::Maudit,
-        SpecialCardType::Nul,
-        SpecialCardType::Minus10
-    };
-    std::shuffle(bonusPool.begin(), bonusPool.end(), rng);
-    std::shuffle(malusPool.begin(), malusPool.end(), rng);
-    for (int i = 0; i < bonusCount; ++i) {
-        state.specialCards.push_back(bonusPool[i % bonusPool.size()]);
-    }
-    for (int i = 0; i < malusCount; ++i) {
-        state.specialCards.push_back(malusPool[i % malusPool.size()]);
-    }
-    std::shuffle(state.specialCards.begin(), state.specialCards.end(), rng);
 }
 
 void Game::togglePredictionSelection(int index) {
     if (index < 0 || index >= kPredictionCount) {
         return;
     }
-    predictionSelected[index] = !predictionSelected[index];
+    // Radio button : sélectionne uniquement la prédiction cliquée
+    for (int i = 0; i < kPredictionCount; ++i) {
+        predictionSelected[i] = (i == index);
+    }
 }
 
 void Game::appliquerPredictionPourJoueur(int playerIndex) {
-    const auto& activePredictions = PredictionEngine::predictionTypes();
-    int selectedCount = 0;
-    int totalPoints = 0;
-    bool anySuccess = true;
-    bool anyFailure = false;
-    auto& state = players[playerIndex];
-
-    if (!cartes[0] || !cartes[1]) {
-        derniersPoints = 0;
-        return;
-    }
-
-    auto effect = SpecialCardType::None;
-    if (!state.specialCards.empty()) {
-        effect = state.specialCards.front();
-        if (effect == SpecialCardType::Nul) {
-            derniersPoints = 0;
-            dernierResultat = "NUL: predictions annulees";
-            state.specialCards.erase(state.specialCards.begin());
-            return;
-        }
-        if (effect == SpecialCardType::Grace || effect == SpecialCardType::Maudit) {
-            state.specialCards.erase(state.specialCards.begin());
-        }
-        if (effect == SpecialCardType::Double) {
-            state.multiplier *= 2;
-            state.specialCards.erase(state.specialCards.begin());
-        } else if (effect == SpecialCardType::Plus10) {
-            state.temporaryModifier += 10;
-            state.specialCards.erase(state.specialCards.begin());
-        } else if (effect == SpecialCardType::Minus10) {
-            state.temporaryModifier -= 10;
-            state.specialCards.erase(state.specialCards.begin());
-        }
-    }
-
-    for (int i = 0; i < kPredictionCount; ++i) {
-        if (!predictionSelected[i]) {
-            continue;
-        }
-        ++selectedCount;
-        const PredictionType type = activePredictions[i];
-        bool success = predictionReussie(type);
-        if (effect == SpecialCardType::Grace) {
-            success = true;
-        } else if (effect == SpecialCardType::Maudit) {
-            success = false;
-        }
-        int points = PredictionEngine::points(type);
-        if (success) {
-            totalPoints += points;
-        } else {
-            totalPoints -= points;
-            anyFailure = true;
-        }
-    }
-
-    if (selectedCount == 0) {
-        derniersPoints = 0;
-        dernierResultat = "Aucune prediction selectionnee";
-        return;
-    }
-
-    if (state.immunity && totalPoints < 0) {
-        totalPoints = 0;
-        state.immunity = false;
-        dernierResultat = "Immunite active : aucune perte de points";
-    } else {
-        dernierResultat = "";
-        if (totalPoints >= 0) {
-            dernierResultat = "Reussi: +" + std::to_string(totalPoints) + " pts";
-        } else {
-            dernierResultat = "Rate: " + std::to_string(totalPoints) + " pts";
-        }
-    }
-
-    totalPoints *= state.multiplier;
-    totalPoints += state.temporaryModifier;
-
-    if (state.multiplier > 1 || state.temporaryModifier != 0) {
-        dernierResultat += " (bonus actif)";
-    }
-
-    if (totalPoints > 0 && !anyFailure) {
-        state.successStreak += 1;
-        if (state.successStreak >= 3) {
-            state.immunity = true;
-        }
-    } else if (totalPoints <= 0) {
-        state.successStreak = 0;
-    }
-
-    state.multiplier = 1;
-    state.temporaryModifier = 0;
-    state.retryAvailable = true;
-    derniersPoints = totalPoints;
+    turnResolver.appliquerPredictionPourJoueur(playerIndex);
 }
 
 void Game::appliquerPrediction() {
-    if (estModeMultijoueur()) {
-        appliquerPredictionPourJoueur(joueurCourant - 1);
-        return;
-    }
-    appliquerPredictionPourJoueur(0);
+    turnResolver.appliquerPrediction();
 }
 
 void Game::useJoker(JokerAction action) {
-    if (joueurCourant < 1 || joueurCourant > 2) {
-        return;
-    }
-    auto& state = players[joueurCourant - 1];
-    auto it = std::find(state.jokers.begin(), state.jokers.end(), action);
-    if (it == state.jokers.end()) {
-        dernierResultat = "Joker non disponible";
-        return;
-    }
-    state.jokers.erase(it);
+    turnResolver.useJoker(action);
+}
 
+std::unique_ptr<IJokerEffect> Game::createJokerEffect(JokerAction action) {
     switch (action) {
-        case JokerAction::X2:
-            state.multiplier *= 2;
-            dernierResultat = "Joker X2 active : prochain tour double";
-            break;
-        case JokerAction::Next:
-            if (estModeMultijoueur()) {
-                state.skipNextTurn = true;
-                dernierResultat = "Joker NEXT active : tour suivant passe";
-            } else {
-                dernierResultat = "NEXT uniquement multijoueur";
-            }
-            break;
-        case JokerAction::Mix:
-            if (index < kDeckSize) {
-                std::shuffle(paquet + index, paquet + kDeckSize, rng);
-                dernierResultat = "Joker MIX active : paquet remelange";
-            } else {
-                dernierResultat = "Rien a melanger";
-            }
-            break;
-        case JokerAction::Vision:
-            if (index < kDeckSize) {
-                state.revealedCardId = paquet[index].getId();
-                dernierResultat = "Joker VISION active : prochaine carte vue";
-            } else {
-                dernierResultat = "Plus de carte a voir";
-            }
-            break;
-        case JokerAction::Tirage:
-            state.extraDraws += 1;
-            dernierResultat = "Joker TIRAGE active : deux tirages successifs";
-            break;
-        case JokerAction::Retry:
-            state.immunity = true;
-            dernierResultat = "Joker RETRY active : prochaine perte annulee";
-            break;
-        case JokerAction::Swap:
-            if (estModeMultijoueur() && !estModeMultijoueurOnline()) {
-                auto& opp = players[(joueurCourant == 1) ? 1 : 0];
-                std::swap(state.jokers, opp.jokers);
-                std::swap(state.specialCards, opp.specialCards);
-                dernierResultat = "Joker SWAP active : effets echanges";
-            } else {
-                dernierResultat = "SWAP uniquement multijoueur local";
-            }
-            break;
-        case JokerAction::Plus5:
-            state.temporaryModifier += 5;
-            dernierResultat = "Joker +5 active : prochain score +5";
-            break;
-        case JokerAction::Minus5:
-            state.temporaryModifier -= 5;
-            dernierResultat = "Joker -5 active : prochain score -5";
-            break;
-        default:
-            dernierResultat = "Joker inconnu";
-            break;
+        case JokerAction::X2:     return std::make_unique<JokerX2>();
+        case JokerAction::Next:   return std::make_unique<JokerNext>();
+        case JokerAction::Mix:    return std::make_unique<JokerMix>();
+        case JokerAction::Vision: return std::make_unique<JokerVision>();
+        case JokerAction::Tirage: return std::make_unique<JokerTirage>();
+        case JokerAction::Retry:  return std::make_unique<JokerRetry>();
+        case JokerAction::Swap:   return std::make_unique<JokerSwap>();
+        case JokerAction::Plus5:  return std::make_unique<JokerPlus5>();
+        case JokerAction::Minus5: return std::make_unique<JokerMinus5>();
+        default:                  return nullptr;
     }
 }
 
@@ -744,11 +558,6 @@ void Game::afficherJokersEtInstructions() {
         txtVision.setPosition({10.f, 80.f});
         window.draw(txtVision);
     }
-
-    sf::Text txtInstr(font, "Jokers: 1=X2 2=MIX 3=VISION 4=+5 5=-5 6=TIRAGE 7=RETRY 8=SWAP N=NEXT", 14);
-    txtInstr.setFillColor(sf::Color::White);
-    txtInstr.setPosition({10.f, 520.f});
-    window.draw(txtInstr);
 }
 
 void Game::reinitialiserPartie() {
@@ -779,7 +588,8 @@ void Game::reinitialiserPartie() {
     predictionActive = PredictionType::Couleur;
     predictionIA = PredictionType::Couleur;
     dernierePredictionIA = PredictionType::Couleur;
-    dernierResultat = "Choisis une prediction puis tire 2 cartes";
+    dernierResultat = "Choisis une prediction puis tire la prochaine carte";
+        pendingJoker = JokerAction::None;
     dernierResultatIA = "IA en attente";
     suiteStreakIA = 0;
     for (auto& state : players) {
@@ -787,6 +597,12 @@ void Game::reinitialiserPartie() {
     }
     assignPlayerDeck();
     fin = false;
+
+    // Tirer la premiere carte automatiquement
+    cartes[0] = &paquet[0];
+    cartes[1] = nullptr;
+    index = 1;
+    memoriserCarteVue(cartes[0]->getId());
 }
 
 bool Game::estModeMultijoueur() const {
@@ -842,7 +658,7 @@ bool Game::startOnlineClient(const std::string& ip, const std::string& port) {
     onlineIp = ip;
     onlinePort = port;
     socket.setBlocking(true);
-    auto maybeAddress = sf::IpAddress::fromString(ip);
+    auto maybeAddress = sf::IpAddress::resolve(ip);
     if (!maybeAddress.has_value() || socket.connect(*maybeAddress, static_cast<unsigned short>(std::stoi(port)), sf::seconds(3)) != sf::Socket::Status::Done) {
         if (txtOnlineConnectionStatus) {
             txtOnlineConnectionStatus->setString("Echec de connexion a " + ip + ":" + port);
@@ -919,14 +735,12 @@ void Game::processRemoteMoveExecution(int joueur, int predictionIndex, int cardI
         return nullptr;
     };
 
-    carte* cardA = findCard(cardIdA);
+    // cardIdA = carte précédente (déjà dans cartes[0]), cardIdB = nouvelle carte
     carte* cardB = findCard(cardIdB);
-    if (cardA && cardB) {
-        cartes[0] = cardA;
+    if (cardB) {
         cartes[1] = cardB;
-        memoriserCarteVue(cardA->getId());
         memoriserCarteVue(cardB->getId());
-        index += 2;
+        index += 1;
         if (index >= kDeckSize) {
             fin = true;
         }
@@ -935,6 +749,13 @@ void Game::processRemoteMoveExecution(int joueur, int predictionIndex, int cardI
     appliquerPrediction();
     appliquerScoreJoueurSelonMode();
     appliquerTourSolo();
+
+    // Shift: la nouvelle carte devient la précédente
+    cartes[0] = cartes[1];
+    cartes[1] = nullptr;
+    cartesChargees[0] = nullptr;
+    cartesChargees[1] = nullptr;
+    spritesCarte[1].reset();
 
     if (fin) {
         terminerPartie();
@@ -1030,6 +851,7 @@ void Game::processNetworkEvents() {
 
 void Game::demarrerPartie(ModeJeu mode) {
     modeJeu = mode;
+    configurerIASolo();
     reinitialiserPartie();
     configurerTitreSelonMode();
     sf::FloatRect tb = txtTitre->getLocalBounds();
@@ -1080,435 +902,27 @@ void Game::run() {
 }
 
 void Game::handleEvent(const sf::Event& event) {
-    if (event.is<sf::Event::Closed>()) {
-        window.close();
-        return;
-    }
-
-    if (const auto* resized = event.getIf<sf::Event::Resized>()) {
-        handleResized(*resized);
-    }
-
-    if (const auto* key = event.getIf<sf::Event::KeyPressed>()) {
-        handleKeyPressed(*key);
-    }
-
-    if (const auto* text = event.getIf<sf::Event::TextEntered>()) {
-        handleTextEntered(*text);
-    }
-
-    if (const auto* click = event.getIf<sf::Event::MouseButtonPressed>()) {
-        handleMousePressed(*click);
-    }
+    inputController.handleEvent(event);
 }
 
 void Game::handleResized(const sf::Event::Resized& resized) {
-    float winW = static_cast<float>(resized.size.x);
-    float winH = static_cast<float>(resized.size.y);
-    float ratio = std::min(winW / 800.f, winH / 560.f);
-    float vpW = (800.f * ratio) / winW;
-    float vpH = (560.f * ratio) / winH;
-    vue.setViewport(sf::FloatRect(
-        {(1.f - vpW) / 2.f, (1.f - vpH) / 2.f},
-        {vpW, vpH}
-    ));
-    window.setView(vue);
+    inputController.handleResized(resized);
 }
 
 void Game::handleKeyPressed(const sf::Event::KeyPressed& key) {
-    if (ecran == Ecran::FinPartie) {
-        if (key.code == sf::Keyboard::Key::Enter || key.code == sf::Keyboard::Key::Escape) {
-            ecran = Ecran::Menu;
-        }
-        return;
-    }
-
-    if (ecran == Ecran::Menu) {
-        if (key.code == sf::Keyboard::Key::Up) {
-            selectionMenu = (selectionMenu + 3) % 4;
-        } else if (key.code == sf::Keyboard::Key::Down) {
-            selectionMenu = (selectionMenu + 1) % 4;
-        } else if (key.code == sf::Keyboard::Key::Enter) {
-            switch (selectionMenu) {
-                case 0:
-                    demarrerPartie(ModeJeu::PartieTest);
-                    break;
-                case 1:
-                    selectionMenuSolo = 0;
-                    ecran = Ecran::MenuSolo;
-                    break;
-                case 2:
-                    selectionMenuMulti = 0;
-                    ecran = Ecran::MenuMulti;
-                    break;
-                case 3:
-                    window.close();
-                    break;
-                default:
-                    break;
-            }
-        }
-        return;
-    }
-
-    if (ecran == Ecran::MenuSolo) {
-        if (key.code == sf::Keyboard::Key::Up) {
-            selectionMenuSolo = (selectionMenuSolo + 3) % 4;
-        } else if (key.code == sf::Keyboard::Key::Down) {
-            selectionMenuSolo = (selectionMenuSolo + 1) % 4;
-        } else if (key.code == sf::Keyboard::Key::Enter) {
-            if (selectionMenuSolo == 0) {
-                prochaineMode = ModeJeu::SoloFacile;
-                ecranApresDeck = Ecran::Jeu;
-                ecran = Ecran::MenuDeck;
-            } else if (selectionMenuSolo == 1) {
-                prochaineMode = ModeJeu::SoloMoyen;
-                ecranApresDeck = Ecran::Jeu;
-                ecran = Ecran::MenuDeck;
-            } else if (selectionMenuSolo == 2) {
-                prochaineMode = ModeJeu::SoloDifficile;
-                ecranApresDeck = Ecran::Jeu;
-                ecran = Ecran::MenuDeck;
-            } else if (selectionMenuSolo == 3) {
-                ecran = Ecran::Menu;
-            }
-        }
-        return;
-    }
-
-    if (ecran == Ecran::MenuMulti) {
-        if (key.code == sf::Keyboard::Key::Up) {
-            selectionMenuMulti = (selectionMenuMulti + 2) % 3;
-        } else if (key.code == sf::Keyboard::Key::Down) {
-            selectionMenuMulti = (selectionMenuMulti + 1) % 3;
-        } else if (key.code == sf::Keyboard::Key::Enter) {
-            if (selectionMenuMulti == 0) {
-                prochaineMode = ModeJeu::MultiMaison;
-                ecranApresDeck = Ecran::Jeu;
-                ecran = Ecran::MenuDeck;
-            } else if (selectionMenuMulti == 1) {
-                selectionOnline = 0;
-                ecranApresDeck = Ecran::MenuMultiOnline;
-                ecran = Ecran::MenuDeck;
-            } else if (selectionMenuMulti == 2) {
-                ecran = Ecran::Menu;
-            }
-        }
-        return;
-    }
-
-    if (ecran == Ecran::MenuDeck) {
-        if (key.code == sf::Keyboard::Key::Up) {
-            selectionDeck = (selectionDeck + 5) % 5;
-            updateDeckInfoText();
-        } else if (key.code == sf::Keyboard::Key::Down) {
-            selectionDeck = (selectionDeck + 1) % 5;
-            updateDeckInfoText();
-        } else if (key.code == sf::Keyboard::Key::Enter) {
-            deckSelection = static_cast<DeckType>(selectionDeck);
-            assignPlayerDeck();
-            if (ecranApresDeck == Ecran::Jeu) {
-                demarrerPartie(prochaineMode);
-            } else {
-                ecran = ecranApresDeck;
-            }
-        } else if (key.code == sf::Keyboard::Key::Escape) {
-            ecran = ecranApresDeck;
-        }
-        return;
-    }
-
-    if (ecran == Ecran::Jeu) {
-        if (key.code == sf::Keyboard::Key::Num1 || key.code == sf::Keyboard::Key::Numpad1) {
-            useJoker(JokerAction::X2);
-            return;
-        }
-        if (key.code == sf::Keyboard::Key::Num2 || key.code == sf::Keyboard::Key::Numpad2) {
-            useJoker(JokerAction::Mix);
-            return;
-        }
-        if (key.code == sf::Keyboard::Key::Num3 || key.code == sf::Keyboard::Key::Numpad3) {
-            useJoker(JokerAction::Vision);
-            return;
-        }
-        if (key.code == sf::Keyboard::Key::Num4 || key.code == sf::Keyboard::Key::Numpad4) {
-            useJoker(JokerAction::Plus5);
-            return;
-        }
-        if (key.code == sf::Keyboard::Key::Num5 || key.code == sf::Keyboard::Key::Numpad5) {
-            useJoker(JokerAction::Minus5);
-            return;
-        }
-        if (key.code == sf::Keyboard::Key::Num6 || key.code == sf::Keyboard::Key::Numpad6) {
-            useJoker(JokerAction::Tirage);
-            return;
-        }
-        if (key.code == sf::Keyboard::Key::Num7 || key.code == sf::Keyboard::Key::Numpad7) {
-            useJoker(JokerAction::Retry);
-            return;
-        }
-        if (key.code == sf::Keyboard::Key::Num8 || key.code == sf::Keyboard::Key::Numpad8) {
-            useJoker(JokerAction::Swap);
-            return;
-        }
-        if (key.code == sf::Keyboard::Key::N) {
-            useJoker(JokerAction::Next);
-            return;
-        }
-    }
-
-    if (ecran == Ecran::MenuMultiOnline) {
-        if (key.code == sf::Keyboard::Key::Up) {
-            selectionOnline = (selectionOnline + 5) % 5;
-        } else if (key.code == sf::Keyboard::Key::Down) {
-            selectionOnline = (selectionOnline + 1) % 5;
-        } else if (key.code == sf::Keyboard::Key::Backspace) {
-            if (selectionOnline == 0 && !onlineIp.empty()) {
-                onlineIp.pop_back();
-            } else if (selectionOnline == 1 && !onlinePort.empty()) {
-                onlinePort.pop_back();
-            }
-        } else if (key.code == sf::Keyboard::Key::Enter) {
-            if (selectionOnline == 2) {
-                if (startOnlineHost(onlinePort)) {
-                    ecran = Ecran::OnlineWaiting;
-                }
-            } else if (selectionOnline == 3) {
-                if (startOnlineClient(onlineIp, onlinePort)) {
-                    ecran = Ecran::OnlineWaiting;
-                }
-            } else if (selectionOnline == 4) {
-                resetOnlineSession();
-                ecran = Ecran::MenuMulti;
-            }
-        }
-        return;
-    }
-
-    if (ecran == Ecran::OnlineWaiting) {
-        if (key.code == sf::Keyboard::Key::Escape) {
-            resetOnlineSession();
-            ecran = Ecran::MenuMulti;
-        }
-        return;
-    }
-
-    if (key.code == sf::Keyboard::Key::Left || key.code == sf::Keyboard::Key::Right) {
-        selectionJeu = 1 - selectionJeu;
-    } else if (key.code == sf::Keyboard::Key::Enter) {
-        if (selectionJeu == 0) {
-            if (estModeMultijoueurOnline()) {
-                if (joueurCourant != myPlayerNumber) {
-                    return;
-                }
-                int predictionIndex = 0;
-                const auto& types = PredictionEngine::predictionTypes();
-                for (size_t i = 0; i < types.size(); ++i) {
-                    if (types[i] == predictionActive) {
-                        predictionIndex = static_cast<int>(i);
-                        break;
-                    }
-                }
-                if (onlineHost && myPlayerNumber == 1) {
-                    tirerDeuxCartes();
-                    if (cartes[0] && cartes[1]) {
-                        sendExecuteMove(1, predictionIndex, cartes[0]->getId(), cartes[1]->getId());
-                    }
-                } else if (!onlineHost && myPlayerNumber == 2) {
-                    sendMoveRequest(predictionIndex);
-                }
-            } else {
-                tirerDeuxCartes();
-            }
-        } else {
-            ecran = Ecran::Menu;
-        }
-    }
+    inputController.handleKeyPressed(key);
 }
 
 void Game::handleMousePressed(const sf::Event::MouseButtonPressed& click) {
-    sf::Vector2f pos = window.mapPixelToCoords(sf::Vector2i(click.position));
-
-    if (ecran == Ecran::Menu) {
-        if (btnMenuPartieTest.getGlobalBounds().contains(pos)) {
-            demarrerPartie(ModeJeu::PartieTest);
-        } else if (btnMenuSolo.getGlobalBounds().contains(pos)) {
-            selectionMenuSolo = 0;
-            ecran = Ecran::MenuSolo;
-        } else if (btnMenuMulti.getGlobalBounds().contains(pos)) {
-            selectionMenuMulti = 0;
-            ecran = Ecran::MenuMulti;
-        } else if (btnMenuQuitter.getGlobalBounds().contains(pos)) {
-            window.close();
-        }
-        return;
-    }
-
-    if (ecran == Ecran::MenuSolo) {
-        if (btnSoloFacile.getGlobalBounds().contains(pos)) {
-            prochaineMode = ModeJeu::SoloFacile;
-            ecranApresDeck = Ecran::Jeu;
-            ecran = Ecran::MenuDeck;
-        } else if (btnSoloMoyen.getGlobalBounds().contains(pos)) {
-            prochaineMode = ModeJeu::SoloMoyen;
-            ecranApresDeck = Ecran::Jeu;
-            ecran = Ecran::MenuDeck;
-        } else if (btnSoloDifficile.getGlobalBounds().contains(pos)) {
-            prochaineMode = ModeJeu::SoloDifficile;
-            ecranApresDeck = Ecran::Jeu;
-            ecran = Ecran::MenuDeck;
-        } else if (btnSoloRetour.getGlobalBounds().contains(pos)) {
-            ecran = Ecran::Menu;
-        }
-        return;
-    }
-
-    if (ecran == Ecran::MenuMulti) {
-        if (btnMultiMaison.getGlobalBounds().contains(pos)) {
-            prochaineMode = ModeJeu::MultiMaison;
-            ecranApresDeck = Ecran::Jeu;
-            ecran = Ecran::MenuDeck;
-        } else if (btnMultiInternet.getGlobalBounds().contains(pos)) {
-            selectionOnline = 0;
-            ecranApresDeck = Ecran::MenuMultiOnline;
-            ecran = Ecran::MenuDeck;
-        } else if (btnMultiRetour.getGlobalBounds().contains(pos)) {
-            ecran = Ecran::Menu;
-        }
-        return;
-    }
-
-    if (ecran == Ecran::MenuMultiOnline) {
-        if (btnOnlineHost.getGlobalBounds().contains(pos)) {
-            if (startOnlineHost(onlinePort)) {
-                ecran = Ecran::OnlineWaiting;
-            }
-        } else if (btnOnlineJoin.getGlobalBounds().contains(pos)) {
-            if (startOnlineClient(onlineIp, onlinePort)) {
-                ecran = Ecran::OnlineWaiting;
-            }
-        } else if (btnOnlineBack.getGlobalBounds().contains(pos)) {
-            resetOnlineSession();
-            ecran = Ecran::MenuMulti;
-        } else if (btnOnlineIp.getGlobalBounds().contains(pos)) {
-            selectionOnline = 0;
-        } else if (btnOnlinePort.getGlobalBounds().contains(pos)) {
-            selectionOnline = 1;
-        }
-        return;
-    }
-
-    if (ecran == Ecran::MenuDeck) {
-        for (int i = 0; i < 6; ++i) {
-            if (btnDeckOptions[i].getGlobalBounds().contains(pos)) {
-                if (i == 5) {
-                    ecran = ecranApresDeck;
-                    return;
-                }
-                selectionDeck = i;
-                updateDeckInfoText();
-                deckSelection = static_cast<DeckType>(i);
-                assignPlayerDeck();
-                if (ecranApresDeck == Ecran::Jeu) {
-                    demarrerPartie(prochaineMode);
-                } else {
-                    ecran = ecranApresDeck;
-                }
-                return;
-            }
-        }
-        return;
-    }
-
-    if (ecran == Ecran::OnlineWaiting) {
-        return;
-    }
-
-    if (ecran == Ecran::FinPartie) {
-        if (btnFinMenu.getGlobalBounds().contains(pos)) {
-            ecran = Ecran::Menu;
-        }
-        return;
-    }
-
-    for (int i = 0; i < kPredictionCount; ++i) {
-        if (btnPredictions[i].getGlobalBounds().contains(pos)) {
-            togglePredictionSelection(i);
-            predictionActive = PredictionEngine::predictionTypes()[i];
-            return;
-        }
-    }
-
-    if (!fin && btnTirer.getGlobalBounds().contains(pos)) {
-        if (estModeMultijoueurOnline()) {
-            if (joueurCourant != myPlayerNumber) {
-                return;
-            }
-            int predictionIndex = 0;
-            const auto& types = PredictionEngine::predictionTypes();
-            for (size_t i = 0; i < types.size(); ++i) {
-                if (types[i] == predictionActive) {
-                    predictionIndex = static_cast<int>(i);
-                    break;
-                }
-            }
-            if (onlineHost && myPlayerNumber == 1) {
-                tirerDeuxCartes();
-                if (cartes[0] && cartes[1]) {
-                    sendExecuteMove(1, predictionIndex, cartes[0]->getId(), cartes[1]->getId());
-                }
-            } else if (!onlineHost && myPlayerNumber == 2) {
-                sendMoveRequest(predictionIndex);
-            }
-        } else {
-            tirerDeuxCartes();
-        }
-    }
-
-    if (btnQuitter.getGlobalBounds().contains(pos)) {
-        ecran = Ecran::Menu;
-    }
+    inputController.handleMousePressed(click);
 }
 
 void Game::handleTextEntered(const sf::Event::TextEntered& text) {
-    if (ecran != Ecran::MenuMultiOnline) {
-        return;
-    }
-
-    if (selectionOnline == 0) {
-        if ((text.unicode >= '0' && text.unicode <= '9') || text.unicode == '.') {
-            onlineIp.push_back(static_cast<char>(text.unicode));
-        }
-    } else if (selectionOnline == 1) {
-        if (text.unicode >= '0' && text.unicode <= '9') {
-            onlinePort.push_back(static_cast<char>(text.unicode));
-        }
-    }
-    txtOnlineIpLabel->setString("IP: " + onlineIp);
-    txtOnlinePortLabel->setString("Port: " + onlinePort);
-    centrerTexte(*txtOnlineIpLabel, btnOnlineIp);
-    centrerTexte(*txtOnlinePortLabel, btnOnlinePort);
+    inputController.handleTextEntered(text);
 }
 
 void Game::renderFrame() {
-    if (ecran == Ecran::Menu) {
-        renderMenu();
-    } else if (ecran == Ecran::MenuSolo) {
-        renderMenuSolo();
-    } else if (ecran == Ecran::MenuMulti) {
-        renderMenuMulti();
-    } else if (ecran == Ecran::MenuDeck) {
-        renderMenuDeck();
-    } else if (ecran == Ecran::MenuMultiOnline) {
-        renderMenuMultiOnline();
-    } else if (ecran == Ecran::OnlineWaiting) {
-        renderOnlineWaiting();
-    } else if (ecran == Ecran::FinPartie) {
-        renderFinPartie();
-    } else {
-        renderJeu();
-    }
-    window.display();
+    renderController.renderFrame();
 }
 
 void Game::updateMenuHighlight() {
@@ -1817,31 +1231,44 @@ void Game::renderJeu() {
     window.draw(txtDeck);
 
     const auto& currentPlayerState = players[joueurCourant - 1];
-    std::string jokerList;
-    for (auto joker : currentPlayerState.jokers) {
-        if (!jokerList.empty()) {
-            jokerList += ", ";
-        }
-        switch (joker) {
-            case JokerAction::X2: jokerList += "X2"; break;
-            case JokerAction::Next: jokerList += "NEXT"; break;
-            case JokerAction::Mix: jokerList += "MIX"; break;
-            case JokerAction::Vision: jokerList += "VISION"; break;
-            case JokerAction::Tirage: jokerList += "TIRAGE"; break;
-            case JokerAction::Retry: jokerList += "RETRY"; break;
-            case JokerAction::Swap: jokerList += "SWAP"; break;
-            case JokerAction::Plus5: jokerList += "+5"; break;
-            case JokerAction::Minus5: jokerList += "-5"; break;
-            default: break;
+
+    // --- Boutons jokers (cote droit, cliquables) ---
+    {
+        sf::Text txtJokerTitle(font, "JOKERS", 15);
+        txtJokerTitle.setFillColor({200, 150, 255});
+        txtJokerTitle.setPosition({510.f, 110.f});
+        window.draw(txtJokerTitle);
+
+        const auto& jokers = currentPlayerState.jokers;
+        if (jokers.empty()) {
+            sf::Text txtNoJoker(font, "Aucun joker", 14);
+            txtNoJoker.setFillColor({150, 150, 150});
+            txtNoJoker.setPosition({510.f, 132.f});
+            window.draw(txtNoJoker);
+        } else {
+            sf::Vector2f mp = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+            for (int i = 0; i < static_cast<int>(jokers.size()); ++i) {
+                sf::FloatRect bounds = jokerButtonBounds(i);
+                sf::RectangleShape btn(bounds.size);
+                btn.setPosition(bounds.position);
+                const bool hovered = bounds.contains(mp);
+                const bool selected = (pendingJoker == jokers[i]);
+                if (selected)
+                    btn.setFillColor({120, 80, 30});
+                else if (hovered)
+                    btn.setFillColor({100, 60, 130});
+                else
+                    btn.setFillColor({65, 35, 90});
+                btn.setOutlineThickness(selected ? 3.f : 2.f);
+                btn.setOutlineColor(selected ? sf::Color::Yellow : sf::Color{200, 150, 255});
+                window.draw(btn);
+                sf::Text lbl(font, jokerLabel(jokers[i]), 14);
+                lbl.setFillColor(sf::Color::White);
+                centrerTexte(lbl, btn);
+                window.draw(lbl);
+            }
         }
     }
-    if (jokerList.empty()) {
-        jokerList = "Aucun joker";
-    }
-    sf::Text txtJokers(font, "Joker(s): " + jokerList, 16);
-    txtJokers.setFillColor(sf::Color::White);
-    txtJokers.setPosition({10.f, 60.f});
-    window.draw(txtJokers);
     afficherJokersEtInstructions();
 
     if (estModeMultijoueurOnline()) {
@@ -1872,32 +1299,23 @@ void Game::renderJeu() {
     const float cardW = 150.f;
     const float cardH = 220.f;
     const float cardY = 170.f;
-    for (int i = 0; i < 2; ++i) {
-        float cardX = (i == 0) ? 175.f : 475.f;
-        if (cartes[i]) {
-            // Charger la texture si la carte a changé
-            if (cartesChargees[i] != cartes[i]) {
-                if (texturesCarte[i].loadFromFile(cheminCarte(*cartes[i]))) {
-                    spritesCarte[i].emplace(texturesCarte[i]);
-                    float sx = cardW / static_cast<float>(texturesCarte[i].getSize().x);
-                    float sy = cardH / static_cast<float>(texturesCarte[i].getSize().y);
-                    spritesCarte[i]->setScale({sx, sy});
-                    spritesCarte[i]->setPosition({cardX, cardY});
-                }
-                cartesChargees[i] = cartes[i];
+    const float cardX = 325.f; // centrée dans la fenêtre (800px)
+    // Affiche uniquement la carte courante (cartes[0])
+    if (cartes[0]) {
+        if (cartesChargees[0] != cartes[0]) {
+            if (texturesCarte[0].loadFromFile(cheminCarte(*cartes[0]))) {
+                spritesCarte[0].emplace(texturesCarte[0]);
+                float sx = cardW / static_cast<float>(texturesCarte[0].getSize().x);
+                float sy = cardH / static_cast<float>(texturesCarte[0].getSize().y);
+                spritesCarte[0]->setScale({sx, sy});
+                spritesCarte[0]->setPosition({cardX, cardY});
             }
-            if (spritesCarte[i]) {
-                window.draw(*spritesCarte[i]);
-            } else {
-                dessinerCarte(window, *cartes[i], cardX, cardY, font);
-            }
+            cartesChargees[0] = cartes[0];
+        }
+        if (spritesCarte[0]) {
+            window.draw(*spritesCarte[0]);
         } else {
-            sf::RectangleShape vide({cardW, cardH});
-            vide.setPosition({cardX, cardY});
-            vide.setFillColor({20, 80, 20});
-            vide.setOutlineThickness(2.f);
-            vide.setOutlineColor({150, 150, 150});
-            window.draw(vide);
+            dessinerCarte(window, *cartes[0], cardX, cardY, font);
         }
     }
 

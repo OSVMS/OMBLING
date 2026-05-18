@@ -1,8 +1,24 @@
 #include "game.h"
 
-#include "ai_easy.h"
-#include "ai_hard.h"
-#include "ai_medium.h"
+#include "ai_strategy.h"
+
+#include <memory>
+
+void Game::configurerIASolo() {
+    if (modeJeu == ModeJeu::SoloFacile) {
+        soloAi = std::make_unique<EasyAIStrategy>();
+        return;
+    }
+    if (modeJeu == ModeJeu::SoloMoyen) {
+        soloAi = std::make_unique<MediumAIStrategy>();
+        return;
+    }
+    if (modeJeu == ModeJeu::SoloDifficile) {
+        soloAi = std::make_unique<HardAIStrategy>();
+        return;
+    }
+    soloAi.reset();
+}
 
 bool Game::estModeSolo() const {
     return modeJeu == ModeJeu::SoloFacile || modeJeu == ModeJeu::SoloMoyen || modeJeu == ModeJeu::SoloDifficile;
@@ -13,13 +29,14 @@ void Game::preparerTourSolo() {
         return;
     }
 
-    if (modeJeu == ModeJeu::SoloFacile) {
-        predictionIA = AIEasy::choose(rng);
-    } else if (modeJeu == ModeJeu::SoloMoyen) {
-        predictionIA = AIMedium::choose(cartesConnuesIA(), rng);
-    } else {
-        predictionIA = AIHard::choose(cartesConnuesIA(), suiteStreakIA, rng);
+    if (!soloAi) {
+        configurerIASolo();
     }
+    if (!soloAi) {
+        return;
+    }
+
+    predictionIA = soloAi->choose(cartesConnuesIA(), suiteStreakIA, rng);
 
     if (predictionIA == PredictionType::Suite && dernierePredictionIA == PredictionType::Suite) {
         ++suiteStreakIA;

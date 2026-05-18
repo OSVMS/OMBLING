@@ -44,12 +44,12 @@ int PredictionEngine::points(PredictionType type) {
 
 std::string PredictionEngine::name(PredictionType type) {
     switch (type) {
-        case PredictionType::Couleur: return "Couleur";
-        case PredictionType::Signe: return "Signe";
-        case PredictionType::Inferieur: return "Inferieur";
-        case PredictionType::Superieur: return "Superieur";
-        case PredictionType::Suite: return "Suite";
-        case PredictionType::Paire: return "Paire";
+        case PredictionType::Couleur:  return "Couleur";
+        case PredictionType::Signe:    return "Signe";
+        case PredictionType::Inferieur:return "Inferieur";
+        case PredictionType::Superieur:return "Superieur";
+        case PredictionType::Suite:    return "Suite";
+        case PredictionType::Paire:    return "Paire";
     }
     return "?";
 }
@@ -70,9 +70,9 @@ bool PredictionEngine::isSuccessful(
         case PredictionType::Signe:
             return gaucheCouleur == droiteCouleur;
         case PredictionType::Inferieur:
-            return gaucheValeur < droiteValeur;
+            return droiteValeur < gaucheValeur;
         case PredictionType::Superieur:
-            return gaucheValeur > droiteValeur;
+            return droiteValeur > gaucheValeur;
         case PredictionType::Suite:
             return std::abs(gaucheValeur - droiteValeur) == 1;
         case PredictionType::Paire:

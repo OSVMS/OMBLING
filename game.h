@@ -1,22 +1,35 @@
 #pragma once
 
+#include "ai_strategy.h"
 #include "carte.h"
+#include "game_state.h"
+#include "game_types.h"
+#include "input_controller.h"
 #include "prediction_engine.h"
+#include "render_controller.h"
+#include "turn_resolver.h"
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <array>
 #include <deque>
 #include <optional>
 #include <random>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "joker_effect.h"
+
 class Game {
 public:
+    Game();
     bool initialize(char* argv[]);
     void run();
 
 private:
+    friend class TurnResolver;
+    friend class InputController;
+    friend class RenderController;
     enum class Ecran {
         Menu,
         MenuSolo,
@@ -44,44 +57,6 @@ private:
         Benit,
         Divin,
         Enfer,
-    };
-
-    enum class JokerAction {
-        None,
-        X2,
-        Next,
-        Mix,
-        Vision,
-        Tirage,
-        Retry,
-        Swap,
-        Plus5,
-        Minus5,
-    };
-
-    enum class SpecialCardType {
-        None,
-        Grace,
-        Maudit,
-        Double,
-        Nul,
-        Plus10,
-        Minus10,
-    };
-
-    struct PlayerState {
-        int score = 0;
-        int successStreak = 0;
-        bool immunity = false;
-        int multiplier = 1;
-        int temporaryModifier = 0;
-        int extraDraws = 0;
-        bool skipNextTurn = false;
-        bool retryAvailable = false;
-        int revealedCardId = 0;
-        int lastScoreDelta = 0;
-        std::vector<JokerAction> jokers;
-        std::vector<SpecialCardType> specialCards;
     };
 
     struct DeckDefinition {
@@ -182,23 +157,25 @@ private:
     std::optional<sf::Sprite> spritesCarte[2];
     const carte* cartesChargees[2] = {nullptr, nullptr};
 
-    PredictionType predictionActive = PredictionType::Couleur;
-    PredictionType predictionIA = PredictionType::Couleur;
-    PredictionType dernierePredictionIA = PredictionType::Couleur;
+    GameState state;
+    PredictionType& predictionActive = state.predictionActive;
+    PredictionType& predictionIA = state.predictionIA;
+    PredictionType& dernierePredictionIA = state.dernierePredictionIA;
+    JokerAction& pendingJoker = state.pendingJoker;
     ModeJeu modeJeu = ModeJeu::PartieTest;
     DeckType deckSelection = DeckType::Classic;
     ModeJeu prochaineMode = ModeJeu::PartieTest;
     Ecran ecranApresDeck = Ecran::Menu;
-    PlayerState players[2];
-    int score = 0;
-    int scoreIA = 0;
-    int scoreJ1 = 0;
-    int scoreJ2 = 0;
-    int joueurCourant = 1;
-    int derniersPoints = 0;
-    std::string dernierResultat = "Choisis une prediction puis tire 2 cartes";
-    std::string dernierResultatIA = "IA en attente";
-    int suiteStreakIA = 0;
+    PlayerState (&players)[2] = state.players;
+    int& score = state.score;
+    int& scoreIA = state.scoreIA;
+    int& scoreJ1 = state.scoreJ1;
+    int& scoreJ2 = state.scoreJ2;
+    int& joueurCourant = state.joueurCourant;
+    int& derniersPoints = state.derniersPoints;
+    std::string& dernierResultat = state.dernierResultat;
+    std::string& dernierResultatIA = state.dernierResultatIA;
+    int& suiteStreakIA = state.suiteStreakIA;
     std::array<bool, kPredictionCount> predictionSelected{};
 
     std::array<sf::RectangleShape, kPredictionCount> btnPredictions;
@@ -209,15 +186,16 @@ private:
     std::optional<sf::Text> txtDeckTitle;
     std::optional<sf::Text> txtDeckInfo;
     int selectionDeck = 0;
-    carte paquet[kDeckSize];
-    std::mt19937 rng{std::random_device{}()};
-    int index = 0;
-    carte* cartes[2] = {nullptr, nullptr};
-    bool fin = false;
-    std::vector<int> cartesVues;
-    std::deque<int> cartesVues10;
+    carte (&paquet)[kDeckSize] = state.paquet;
+    std::mt19937& rng = state.rng;
+    int& index = state.index;
+    carte* (&cartes)[2] = state.cartes;
+    bool& fin = state.fin;
+    std::vector<int>& cartesVues = state.cartesVues;
+    std::deque<int>& cartesVues10 = state.cartesVues10;
 
     std::string baseDir;
+    int& derniereCarteId = state.derniereCarteId; // ID de la derniere carte tiree (utile pour le mode online)
 
     sf::TcpListener listener;
     sf::TcpSocket socket;
@@ -229,6 +207,10 @@ private:
     std::string onlinePort = "55001";
     int selectionOnline = 0;
     int myPlayerNumber = 1;
+    std::unique_ptr<IAIStrategy> soloAi;
+    TurnResolver turnResolver;
+    InputController inputController;
+    RenderController renderController;
 
     std::string asset(const std::string& rel) const;
     std::string cheminCarte(const carte& c) const;
@@ -241,6 +223,7 @@ private:
     void terminerPartie();
     void memoriserCarteVue(int id);
     std::vector<int> cartesConnuesIA() const;
+    void configurerIASolo();
     bool estModeSolo() const;
     bool estModeMultiMaison() const;
     void preparerTourSolo();
@@ -255,6 +238,8 @@ private:
     void updateDeckInfoText();
     void useJoker(JokerAction action);
     void afficherJokersEtInstructions();
+    static std::string jokerLabel(JokerAction a);
+    static sf::FloatRect jokerButtonBounds(int i);
     void configurerTitreSelonMode();
     void configurerFinPartieSolo(std::string& titre, std::string& detail, sf::Color& couleur) const;
     void configurerFinPartieMulti(std::string& titre, std::string& detail, sf::Color& couleur) const;
@@ -291,6 +276,7 @@ private:
     bool estModeMultijoueur() const;
     bool estModeMultijoueurMaison() const;
     bool estModeMultijoueurOnline() const;
+    static std::unique_ptr<IJokerEffect> createJokerEffect(JokerAction action);
     void handleTextEntered(const sf::Event::TextEntered& text);
     bool startOnlineHost(const std::string& port);
     bool startOnlineClient(const std::string& ip, const std::string& port);

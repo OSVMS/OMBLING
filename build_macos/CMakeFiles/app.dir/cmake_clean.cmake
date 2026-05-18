@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/app.dir/ai_easy.cpp.o"
+  "CMakeFiles/app.dir/ai_easy.cpp.o.d"
+  "CMakeFiles/app.dir/ai_hard.cpp.o"
+  "CMakeFiles/app.dir/ai_hard.cpp.o.d"
+  "CMakeFiles/app.dir/ai_medium.cpp.o"
+  "CMakeFiles/app.dir/ai_medium.cpp.o.d"
+  "CMakeFiles/app.dir/ai_strategy.cpp.o"
+  "CMakeFiles/app.dir/ai_strategy.cpp.o.d"
+  "CMakeFiles/app.dir/carte.cpp.o"
+  "CMakeFiles/app.dir/carte.cpp.o.d"
+  "CMakeFiles/app.dir/game.cpp.o"
+  "CMakeFiles/app.dir/game.cpp.o.d"
+  "CMakeFiles/app.dir/game_mode_multi.cpp.o"
+  "CMakeFiles/app.dir/game_mode_multi.cpp.o.d"
+  "CMakeFiles/app.dir/game_mode_solo.cpp.o"
+  "CMakeFiles/app.dir/game_mode_solo.cpp.o.d"
+  "CMakeFiles/app.dir/game_mode_test.cpp.o"
+  "CMakeFiles/app.dir/game_mode_test.cpp.o.d"
+  "CMakeFiles/app.dir/input_controller.cpp.o"
+  "CMakeFiles/app.dir/input_controller.cpp.o.d"
+  "CMakeFiles/app.dir/joker_effect.cpp.o"
+  "CMakeFiles/app.dir/joker_effect.cpp.o.d"
+  "CMakeFiles/app.dir/main.cpp.o"
+  "CMakeFiles/app.dir/main.cpp.o.d"
+  "CMakeFiles/app.dir/prediction_engine.cpp.o"
+  "CMakeFiles/app.dir/prediction_engine.cpp.o.d"
+  "CMakeFiles/app.dir/render_controller.cpp.o"
+  "CMakeFiles/app.dir/render_controller.cpp.o.d"
+  "CMakeFiles/app.dir/turn_resolver.cpp.o"
+  "CMakeFiles/app.dir/turn_resolver.cpp.o.d"
+  "CMakeFiles/app.dir/ui_helpers.cpp.o"
+  "CMakeFiles/app.dir/ui_helpers.cpp.o.d"
+  "app"
+  "app.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/app.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()
