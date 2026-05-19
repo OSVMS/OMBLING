@@ -341,6 +341,15 @@ void Game::setupUi() {
     txtBtnTirer->setFillColor(sf::Color::White);
     centrerTexte(*txtBtnTirer, btnTirer);
 
+    btnPasserMain.setPosition({290.f, 504.f});
+    btnPasserMain.setFillColor({20, 120, 140});
+    btnPasserMain.setOutlineThickness(2.f);
+    btnPasserMain.setOutlineColor(sf::Color::White);
+
+    txtBtnPasserMain.emplace(font, "Passer la main", 22);
+    txtBtnPasserMain->setFillColor(sf::Color::White);
+    centrerTexte(*txtBtnPasserMain, btnPasserMain);
+
     txtTitre.emplace(font, "Partie Test", 34);
     txtTitre->setFillColor(sf::Color::White);
     {
@@ -584,6 +593,8 @@ void Game::reinitialiserPartie() {
     scoreJ1 = 0;
     scoreJ2 = 0;
     joueurCourant = 1;
+    reussitesConsecutives[0] = 0;
+    reussitesConsecutives[1] = 0;
     derniersPoints = 0;
     predictionActive = PredictionType::Couleur;
     predictionIA = PredictionType::Couleur;
@@ -706,6 +717,24 @@ bool Game::sendMoveRequest(int predictionIndex) {
     return socket.send(packet) == sf::Socket::Status::Done;
 }
 
+bool Game::sendPassRequest() {
+    if (!onlineSocketConnected) {
+        return false;
+    }
+    sf::Packet packet;
+    packet << int(4) << myPlayerNumber;
+    return socket.send(packet) == sf::Socket::Status::Done;
+}
+
+bool Game::sendPassExecution(int joueur) {
+    if (!onlineSocketConnected) {
+        return false;
+    }
+    sf::Packet packet;
+    packet << int(5) << joueur;
+    return socket.send(packet) == sf::Socket::Status::Done;
+}
+
 void Game::processRemoteAction(int joueur, int predictionIndex) {
     if (!estModeMultijoueurOnline()) {
         return;
@@ -714,7 +743,16 @@ void Game::processRemoteAction(int joueur, int predictionIndex) {
     if (joueurCourant != joueur) {
         joueurCourant = joueur;
     }
+
+    const int prevId = cartes[0] ? cartes[0]->getId() : 0;
     tirerDeuxCartes();
+
+    if (onlineHost) {
+        const int newId = derniereCarteId;
+        if (prevId != 0 && newId != 0) {
+            sendExecuteMove(joueur, predictionIndex, prevId, newId);
+        }
+    }
 }
 
 void Game::processRemoteMoveExecution(int joueur, int predictionIndex, int cardIdA, int cardIdB) {
@@ -762,6 +800,24 @@ void Game::processRemoteMoveExecution(int joueur, int predictionIndex, int cardI
     }
 }
 
+void Game::processRemotePassExecution(int joueur) {
+    if (!estModeMultijoueurOnline()) {
+        return;
+    }
+
+    if (joueurCourant != joueur) {
+        joueurCourant = joueur;
+    }
+
+    if (joueur < 1 || joueur > 2) {
+        return;
+    }
+
+    reussitesConsecutives[joueur - 1] = 0;
+    joueurCourant = (joueurCourant == 1) ? 2 : 1;
+    dernierResultat = "J" + std::to_string(joueur) + " passe la main a J" + std::to_string(joueurCourant);
+}
+
 void Game::processPacket(sf::Packet& packet) {
     int type = 0;
     if (!(packet >> type)) {
@@ -790,9 +846,6 @@ void Game::processPacket(sf::Packet& packet) {
         }
         if (onlineHost && remotePlayer == 2) {
             processRemoteAction(remotePlayer, predictionIndex);
-            if (cartes[0] && cartes[1]) {
-                sendExecuteMove(remotePlayer, predictionIndex, cartes[0]->getId(), cartes[1]->getId());
-            }
         }
         return;
     }
@@ -805,6 +858,25 @@ void Game::processPacket(sf::Packet& packet) {
             return;
         }
         processRemoteMoveExecution(remotePlayer, predictionIndex, cardIdA, cardIdB);
+        return;
+    }
+    if (type == 4) {
+        int remotePlayer;
+        if (!(packet >> remotePlayer)) {
+            return;
+        }
+        if (onlineHost && remotePlayer == 2 && remotePlayer == joueurCourant && reussitesConsecutives[remotePlayer - 1] >= 2) {
+            processRemotePassExecution(remotePlayer);
+            sendPassExecution(remotePlayer);
+        }
+        return;
+    }
+    if (type == 5) {
+        int remotePlayer;
+        if (!(packet >> remotePlayer)) {
+            return;
+        }
+        processRemotePassExecution(remotePlayer);
     }
 }
 
@@ -1199,6 +1271,24 @@ void Game::updateJeuHighlight() {
 
     surbrillance(btnTirer, couleurBaseTirer, selectionJeu == 0);
     surbrillance(btnQuitter, {180, 30, 30}, selectionJeu == 1);
+
+    if (peutPasserMainMaintenant()) {
+        const bool hovered = btnPasserMain.getGlobalBounds().contains(mp);
+        sf::Color base = {20, 120, 140};
+        if (hovered) {
+            base = {
+                static_cast<std::uint8_t>(std::min(255, base.r + 55)),
+                static_cast<std::uint8_t>(std::min(255, base.g + 55)),
+                static_cast<std::uint8_t>(std::min(255, base.b + 55))
+            };
+            btnPasserMain.setOutlineColor(sf::Color::Yellow);
+            btnPasserMain.setOutlineThickness(3.f);
+        } else {
+            btnPasserMain.setOutlineColor(sf::Color::White);
+            btnPasserMain.setOutlineThickness(2.f);
+        }
+        btnPasserMain.setFillColor(base);
+    }
 }
 
 void Game::renderJeu() {
@@ -1331,6 +1421,34 @@ void Game::renderJeu() {
     updateJeuHighlight();
     window.draw(btnTirer);
     window.draw(*txtBtnTirer);
+    if (peutPasserMainMaintenant()) {
+        window.draw(btnPasserMain);
+        if (txtBtnPasserMain) {
+            centrerTexte(*txtBtnPasserMain, btnPasserMain);
+            window.draw(*txtBtnPasserMain);
+        }
+    }
     window.draw(btnQuitter);
     window.draw(*txtQuitter);
+}
+
+bool Game::peutPasserMainMaintenant() const {
+    if (!estModeMultijoueur() || fin || joueurCourant < 1 || joueurCourant > 2) {
+        return false;
+    }
+    if (estModeMultijoueurOnline() && joueurCourant != myPlayerNumber) {
+        return false;
+    }
+    return reussitesConsecutives[joueurCourant - 1] >= 2;
+}
+
+void Game::passerMainVolontairement() {
+    if (!peutPasserMainMaintenant()) {
+        return;
+    }
+
+    const int joueurQuiPasse = joueurCourant;
+    reussitesConsecutives[joueurQuiPasse - 1] = 0;
+    joueurCourant = (joueurCourant == 1) ? 2 : 1;
+    dernierResultat = "J" + std::to_string(joueurQuiPasse) + " passe la main a J" + std::to_string(joueurCourant);
 }

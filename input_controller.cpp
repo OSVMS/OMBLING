@@ -148,6 +148,23 @@ void InputController::handleKeyPressed(const sf::Event::KeyPressed& key) {
     }
 
     if (game.ecran == Game::Ecran::Jeu) {
+        if (key.code == sf::Keyboard::Key::P) {
+            if (game.estModeMultijoueurOnline()) {
+                if (game.joueurCourant != game.myPlayerNumber || !game.peutPasserMainMaintenant()) {
+                    return;
+                }
+                if (game.onlineHost && game.myPlayerNumber == 1) {
+                    const int joueurQuiPasse = game.joueurCourant;
+                    game.passerMainVolontairement();
+                    game.sendPassExecution(joueurQuiPasse);
+                } else if (!game.onlineHost && game.myPlayerNumber == 2) {
+                    game.sendPassRequest();
+                }
+            } else {
+                game.passerMainVolontairement();
+            }
+            return;
+        }
         if (key.code == sf::Keyboard::Key::Num1 || key.code == sf::Keyboard::Key::Numpad1) {
             game.useJoker(JokerAction::X2);
             return;
@@ -375,6 +392,24 @@ void InputController::handleMousePressed(const sf::Event::MouseButtonPressed& cl
             game.predictionActive = PredictionEngine::predictionTypes()[i];
             return;
         }
+    }
+
+    if (game.peutPasserMainMaintenant() && game.btnPasserMain.getGlobalBounds().contains(pos)) {
+        if (game.estModeMultijoueurOnline()) {
+            if (game.joueurCourant != game.myPlayerNumber) {
+                return;
+            }
+            if (game.onlineHost && game.myPlayerNumber == 1) {
+                const int joueurQuiPasse = game.joueurCourant;
+                game.passerMainVolontairement();
+                game.sendPassExecution(joueurQuiPasse);
+            } else if (!game.onlineHost && game.myPlayerNumber == 2) {
+                game.sendPassRequest();
+            }
+        } else {
+            game.passerMainVolontairement();
+        }
+        return;
     }
 
     if (!game.fin && game.btnTirer.getGlobalBounds().contains(pos)) {

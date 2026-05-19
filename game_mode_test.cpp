@@ -2,17 +2,32 @@
 
 void Game::appliquerScoreJoueurSelonMode() {
     if (estModeMultijoueur()) {
+        const int idx = joueurCourant - 1;
         if (joueurCourant == 1) {
             scoreJ1 += derniersPoints;
         } else {
             scoreJ2 += derniersPoints;
         }
-        if (derniersPoints >= 0) {
-            dernierResultat = "J" + std::to_string(joueurCourant) + " : Reussi +" + std::to_string(derniersPoints) + " pts";
-        } else {
-            dernierResultat = "J" + std::to_string(joueurCourant) + " : Rate " + std::to_string(derniersPoints) + " pts";
+        if (derniersPoints > 0) {
+            reussitesConsecutives[idx] += 1;
+            if (reussitesConsecutives[idx] >= 2) {
+                dernierResultat = "J" + std::to_string(joueurCourant) + " : Reussi +" + std::to_string(derniersPoints) + " pts | Passe possible";
+            } else {
+                const int restant = 2 - reussitesConsecutives[idx];
+                dernierResultat = "J" + std::to_string(joueurCourant) + " : Reussi +" + std::to_string(derniersPoints)
+                    + " pts | Encore " + std::to_string(restant) + " reussite pour passer";
+            }
+            return;
         }
-        joueurCourant = (joueurCourant == 1) ? 2 : 1;
+
+        if (derniersPoints < 0) {
+            reussitesConsecutives[idx] = 0;
+            dernierResultat = "J" + std::to_string(joueurCourant) + " : Rate " + std::to_string(derniersPoints) + " pts";
+            joueurCourant = (joueurCourant == 1) ? 2 : 1;
+            return;
+        }
+
+        dernierResultat = "J" + std::to_string(joueurCourant) + " : 0 pt | Main conservee";
         return;
     }
 

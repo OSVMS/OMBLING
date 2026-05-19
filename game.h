@@ -144,6 +144,8 @@ private:
 
     sf::RectangleShape btnTirer{{220.f, 58.f}};
     std::optional<sf::Text> txtBtnTirer;
+    sf::RectangleShape btnPasserMain{{220.f, 50.f}};
+    std::optional<sf::Text> txtBtnPasserMain;
 
     sf::RectangleShape btnFinMenu{{280.f, 60.f}};
     std::optional<sf::Text> txtFinMenu;
@@ -172,6 +174,7 @@ private:
     int& scoreJ1 = state.scoreJ1;
     int& scoreJ2 = state.scoreJ2;
     int& joueurCourant = state.joueurCourant;
+    int (&reussitesConsecutives)[2] = state.reussitesConsecutives;
     int& derniersPoints = state.derniersPoints;
     std::string& dernierResultat = state.dernierResultat;
     std::string& dernierResultatIA = state.dernierResultatIA;
@@ -247,6 +250,8 @@ private:
     void tirerDeuxCartes();
     bool predictionReussie(PredictionType type) const;
     void appliquerPrediction();
+    bool peutPasserMainMaintenant() const;
+    void passerMainVolontairement();
 
     void handleEvent(const sf::Event& event);
     void handleResized(const sf::Event::Resized& resized);
@@ -285,7 +290,10 @@ private:
     void processPacket(sf::Packet& packet);
     void processRemoteAction(int joueur, int predictionIndex);
     void processRemoteMoveExecution(int joueur, int predictionIndex, int cardIdA, int cardIdB);
+    void processRemotePassExecution(int joueur);
     bool sendDeck();
     bool sendExecuteMove(int joueur, int predictionIndex, int cardIdA, int cardIdB);
     bool sendMoveRequest(int predictionIndex);
+    bool sendPassRequest();
+    bool sendPassExecution(int joueur);
 };

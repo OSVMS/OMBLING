@@ -23,6 +23,7 @@ struct GameState {
     int scoreJ1 = 0;
     int scoreJ2 = 0;
     int joueurCourant = 1;
+    int reussitesConsecutives[2] = {0, 0};
     int derniersPoints = 0;
     std::string dernierResultat = "Choisis une prediction puis tire 2 cartes";
     std::string dernierResultatIA = "IA en attente";
