@@ -1,3 +1,0 @@
-/Users/guillemothugo/Desktop/Projet Poo/build_macos/CMakeFiles/app.dir
-/Users/guillemothugo/Desktop/Projet Poo/build_macos/CMakeFiles/edit_cache.dir
-/Users/guillemothugo/Desktop/Projet Poo/build_macos/CMakeFiles/rebuild_cache.dir
