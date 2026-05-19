@@ -232,11 +232,13 @@ private:
     void preparerTourSolo();
     void appliquerScoreJoueurSelonMode();
     void appliquerTourSolo();
+    void appliquerJokerIASolo(JokerAction action);
     void assignPlayerDeck();
     void assignPlayerJokers(int playerIndex);
     void assignPlayerSpecialCards(int playerIndex);
     void appliquerPredictionPourJoueur(int playerIndex);
     void appliquerTourEffectifs(int playerIndex);
+    void syncPredictionCouranteDepuisJoueur();
     void togglePredictionSelection(int index);
     void updateDeckInfoText();
     void useJoker(JokerAction action);

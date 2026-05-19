@@ -474,7 +474,7 @@ void Game::assignPlayerDeck() {
 }
 
 void Game::assignPlayerJokers(int playerIndex) {
-    static const std::array<JokerAction, 8> possible = {
+    static const std::array<JokerAction, 9> possible = {
         JokerAction::X2,
         JokerAction::Next,
         JokerAction::Mix,
@@ -482,7 +482,8 @@ void Game::assignPlayerJokers(int playerIndex) {
         JokerAction::Tirage,
         JokerAction::Retry,
         JokerAction::Swap,
-        JokerAction::Plus5
+        JokerAction::Plus5,
+        JokerAction::Minus5
     };
     auto& state = players[playerIndex];
     state.jokers.clear();
@@ -495,6 +496,10 @@ void Game::assignPlayerJokers(int playerIndex) {
         case DeckType::Enfer: jokerCount = 1; break;
     }
     std::vector<JokerAction> available(possible.begin(), possible.end());
+    if (estModeSolo()) {
+        available.erase(std::remove(available.begin(), available.end(), JokerAction::Next), available.end());
+        available.erase(std::remove(available.begin(), available.end(), JokerAction::Swap), available.end());
+    }
     std::shuffle(available.begin(), available.end(), rng);
     for (int i = 0; i < std::min(jokerCount, static_cast<int>(available.size())); ++i) {
         state.jokers.push_back(available[i]);
@@ -515,6 +520,19 @@ void Game::togglePredictionSelection(int index) {
     for (int i = 0; i < kPredictionCount; ++i) {
         predictionSelected[i] = (i == index);
     }
+}
+
+void Game::syncPredictionCouranteDepuisJoueur() {
+    if (joueurCourant < 1 || joueurCourant > 2) {
+        return;
+    }
+    int idx = players[joueurCourant - 1].chosenPredictionIndex;
+    if (idx < 0 || idx >= kPredictionCount) {
+        idx = 0;
+        players[joueurCourant - 1].chosenPredictionIndex = 0;
+    }
+    togglePredictionSelection(idx);
+    predictionActive = PredictionEngine::predictionTypes()[idx];
 }
 
 void Game::appliquerPredictionPourJoueur(int playerIndex) {
@@ -562,9 +580,17 @@ void Game::afficherJokersEtInstructions() {
         } else {
             visionText = "Vision impossible : paquet vide";
         }
-        sf::Text txtVision(font, visionText, 16);
-        txtVision.setFillColor(sf::Color::Cyan);
-        txtVision.setPosition({10.f, 80.f});
+
+        sf::RectangleShape panel({380.f, 34.f});
+        panel.setPosition({210.f, 126.f});
+        panel.setFillColor({0, 0, 0, 160});
+        panel.setOutlineThickness(2.f);
+        panel.setOutlineColor({0, 220, 220, 220});
+        window.draw(panel);
+
+        sf::Text txtVision(font, visionText, 18);
+        txtVision.setFillColor({230, 255, 255});
+        centrerTexte(txtVision, panel);
         window.draw(txtVision);
     }
 }
@@ -606,6 +632,9 @@ void Game::reinitialiserPartie() {
     for (auto& state : players) {
         state = PlayerState{};
     }
+    players[0].chosenPredictionIndex = 0;
+    players[1].chosenPredictionIndex = 0;
+    syncPredictionCouranteDepuisJoueur();
     assignPlayerDeck();
     fin = false;
 
@@ -1294,14 +1323,6 @@ void Game::updateJeuHighlight() {
 void Game::renderJeu() {
     // Fond tapis vert (texture réelle)
     window.draw(*spriteFond);
-
-    // Bordure decorative
-    sf::RectangleShape bordure({740.f, 500.f});
-    bordure.setPosition({30.f, 30.f});
-    bordure.setFillColor(sf::Color::Transparent);
-    bordure.setOutlineThickness(4.f);
-    bordure.setOutlineColor({20, 65, 30});
-    window.draw(bordure);
 
     window.draw(*txtTitre);
 

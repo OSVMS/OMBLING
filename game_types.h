@@ -36,6 +36,7 @@ struct PlayerState {
     bool retryAvailable = false;
     int revealedCardId = 0;
     int lastScoreDelta = 0;
+    int chosenPredictionIndex = 0;
     std::vector<JokerAction> jokers;
     std::vector<SpecialCardType> specialCards;
 };

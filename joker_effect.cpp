@@ -52,19 +52,19 @@ void JokerTirage::apply(PlayerState* players, int joueurCourant, carte paquet[52
 void JokerRetry::apply(PlayerState* players, int joueurCourant, carte paquet[52], int& index, std::mt19937& rng, bool estModeMultijoueur, bool estModeMultijoueurOnline, std::string& message) {
     (void)paquet; (void)index; (void)rng; (void)estModeMultijoueur; (void)estModeMultijoueurOnline;
     if (joueurCourant < 1 || joueurCourant > 2) return;
-    players[joueurCourant - 1].immunity = true;
-    message = "Joker RETRY active : prochaine perte annulee";
+    players[joueurCourant - 1].retryAvailable = true;
+    message = "Joker RETRY active : en cas d'echec, une nouvelle carte sera tiree";
 }
 
 void JokerSwap::apply(PlayerState* players, int joueurCourant, carte paquet[52], int& index, std::mt19937& rng, bool estModeMultijoueur, bool estModeMultijoueurOnline, std::string& message) {
     (void)paquet; (void)index; (void)rng;
     if (joueurCourant < 1 || joueurCourant > 2) return;
-    if (estModeMultijoueur && !estModeMultijoueurOnline) {
+    if (estModeMultijoueur) {
         auto& opp = players[(joueurCourant == 1) ? 1 : 0];
-        std::swap(players[joueurCourant - 1].jokers, opp.jokers);
-        message = "Joker SWAP active : effets echanges";
+        std::swap(players[joueurCourant - 1].chosenPredictionIndex, opp.chosenPredictionIndex);
+        message = "Joker SWAP active : predictions echangees";
     } else {
-        message = "SWAP uniquement multijoueur local";
+        message = "SWAP uniquement multijoueur";
     }
 }
 

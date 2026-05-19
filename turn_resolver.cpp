@@ -23,6 +23,22 @@ void TurnResolver::tirerDeuxCartes() {
         return;
     }
 
+    if (game.estModeMultijoueur() && game.joueurCourant >= 1 && game.joueurCourant <= 2) {
+        auto& current = game.players[game.joueurCourant - 1];
+        if (current.skipNextTurn) {
+            current.skipNextTurn = false;
+            const int skipped = game.joueurCourant;
+            game.joueurCourant = (game.joueurCourant == 1) ? 2 : 1;
+            game.syncPredictionCouranteDepuisJoueur();
+            game.dernierResultat = "J" + std::to_string(skipped) + " passe son tour (NEXT)";
+            return;
+        }
+    }
+
+    if (game.estModeMultijoueur()) {
+        game.syncPredictionCouranteDepuisJoueur();
+    }
+
     if (game.pendingJoker != JokerAction::None) {
         useJoker(game.pendingJoker);
         game.pendingJoker = JokerAction::None;
@@ -44,6 +60,23 @@ void TurnResolver::tirerDeuxCartes() {
     }
 
     appliquerPrediction();
+
+    if (game.joueurCourant >= 1 && game.joueurCourant <= 2) {
+        auto& current = game.players[game.joueurCourant - 1];
+        if (game.derniersPoints < 0 && current.retryAvailable && !game.fin && game.index < game.kDeckSize) {
+            current.retryAvailable = false;
+            game.cartes[1] = &game.paquet[game.index];
+            game.derniereCarteId = game.cartes[1]->getId();
+            memoriserCarteVue(game.cartes[1]->getId());
+            game.index += 1;
+            if (game.index >= game.kDeckSize) {
+                game.fin = true;
+            }
+            game.dernierResultat = "RETRY: nouvelle carte tiree";
+            appliquerPrediction();
+        }
+    }
+
     game.appliquerScoreJoueurSelonMode();
     game.appliquerTourSolo();
 
@@ -68,7 +101,7 @@ void TurnResolver::tirerDeuxCartes() {
 }
 
 void TurnResolver::appliquerPredictionPourJoueur(int playerIndex) {
-    static const std::array<JokerAction, 8> rewardPool = {
+    static const std::array<JokerAction, 9> rewardPool = {
         JokerAction::X2,
         JokerAction::Next,
         JokerAction::Mix,
@@ -76,7 +109,8 @@ void TurnResolver::appliquerPredictionPourJoueur(int playerIndex) {
         JokerAction::Tirage,
         JokerAction::Retry,
         JokerAction::Swap,
-        JokerAction::Plus5
+        JokerAction::Plus5,
+        JokerAction::Minus5
     };
 
     const auto& activePredictions = PredictionEngine::predictionTypes();
@@ -135,8 +169,13 @@ void TurnResolver::appliquerPredictionPourJoueur(int playerIndex) {
     if (totalPoints > 0 && !anyFailure) {
         state.successStreak += 1;
         if (state.successStreak >= 3) {
-            std::uniform_int_distribution<int> dist(0, static_cast<int>(rewardPool.size()) - 1);
-            const JokerAction gainedJoker = rewardPool[dist(game.rng)];
+            std::vector<JokerAction> candidates(rewardPool.begin(), rewardPool.end());
+            if (game.estModeSolo()) {
+                candidates.erase(std::remove(candidates.begin(), candidates.end(), JokerAction::Next), candidates.end());
+                candidates.erase(std::remove(candidates.begin(), candidates.end(), JokerAction::Swap), candidates.end());
+            }
+            std::uniform_int_distribution<int> dist(0, static_cast<int>(candidates.size()) - 1);
+            const JokerAction gainedJoker = candidates[dist(game.rng)];
             state.jokers.push_back(gainedJoker);
             state.successStreak = 0;
             game.dernierResultat += " | Serie x3 : joker gagne (" + game.jokerLabel(gainedJoker) + ")";
@@ -147,7 +186,6 @@ void TurnResolver::appliquerPredictionPourJoueur(int playerIndex) {
 
     state.multiplier = 1;
     state.temporaryModifier = 0;
-    state.retryAvailable = true;
     game.derniersPoints = totalPoints;
 }
 
@@ -183,6 +221,9 @@ void TurnResolver::useJoker(JokerAction action) {
             game.estModeMultijoueurOnline(),
             game.dernierResultat
         );
+        if (action == JokerAction::Swap && game.estModeMultijoueur()) {
+            game.syncPredictionCouranteDepuisJoueur();
+        }
     } else {
         game.dernierResultat = "Joker inconnu";
     }

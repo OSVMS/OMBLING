@@ -378,9 +378,27 @@ void InputController::handleMousePressed(const sf::Event::MouseButtonPressed& cl
 
     if (game.joueurCourant >= 1 && game.joueurCourant <= 2) {
         auto& jokers = game.players[game.joueurCourant - 1].jokers;
+        auto estJokerImmediat = [](JokerAction action) {
+            switch (action) {
+                case JokerAction::Next:
+                case JokerAction::Mix:
+                case JokerAction::Vision:
+                case JokerAction::Tirage:
+                case JokerAction::Retry:
+                case JokerAction::Swap:
+                    return true;
+                default:
+                    return false;
+            }
+        };
         for (int i = 0; i < static_cast<int>(jokers.size()); ++i) {
             if (game.jokerButtonBounds(i).contains(pos)) {
-                game.pendingJoker = (game.pendingJoker == jokers[i]) ? JokerAction::None : jokers[i];
+                if (estJokerImmediat(jokers[i])) {
+                    game.pendingJoker = JokerAction::None;
+                    game.useJoker(jokers[i]);
+                } else {
+                    game.pendingJoker = (game.pendingJoker == jokers[i]) ? JokerAction::None : jokers[i];
+                }
                 return;
             }
         }
@@ -390,6 +408,9 @@ void InputController::handleMousePressed(const sf::Event::MouseButtonPressed& cl
         if (game.btnPredictions[i].getGlobalBounds().contains(pos)) {
             game.togglePredictionSelection(i);
             game.predictionActive = PredictionEngine::predictionTypes()[i];
+            if (game.joueurCourant >= 1 && game.joueurCourant <= 2) {
+                game.players[game.joueurCourant - 1].chosenPredictionIndex = i;
+            }
             return;
         }
     }

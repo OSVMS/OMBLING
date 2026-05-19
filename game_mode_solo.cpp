@@ -2,6 +2,7 @@
 
 #include "ai_strategy.h"
 
+#include <algorithm>
 #include <memory>
 
 void Game::configurerIASolo() {
@@ -36,7 +37,12 @@ void Game::preparerTourSolo() {
         return;
     }
 
-    predictionIA = soloAi->choose(cartesConnuesIA(), suiteStreakIA, rng);
+    auto maybeJoker = soloAi->chooseJoker(cartesConnuesIA(), players[1].jokers, cartes[0], suiteStreakIA, rng);
+    if (maybeJoker.has_value()) {
+        appliquerJokerIASolo(*maybeJoker);
+    }
+
+    predictionIA = soloAi->choose(cartesConnuesIA(), cartes[0], suiteStreakIA, rng);
 
     if (predictionIA == PredictionType::Suite && dernierePredictionIA == PredictionType::Suite) {
         ++suiteStreakIA;
@@ -53,14 +59,49 @@ void Game::appliquerTourSolo() {
         return;
     }
 
+    auto& iaState = players[1];
     const int pointsIA = PredictionEngine::points(predictionIA);
+    int delta = 0;
     if (predictionReussie(predictionIA)) {
-        scoreIA += pointsIA;
-        dernierResultatIA = "IA " + PredictionEngine::name(predictionIA) + ": Reussi +" + std::to_string(pointsIA);
+        delta = pointsIA;
     } else {
-        scoreIA -= pointsIA;
-        dernierResultatIA = "IA " + PredictionEngine::name(predictionIA) + ": Rate " + std::to_string(-pointsIA) + " pts";
+        delta = -pointsIA;
     }
+
+    if (iaState.immunity && delta < 0) {
+        delta = 0;
+        iaState.immunity = false;
+    }
+
+    delta *= iaState.multiplier;
+    delta += iaState.temporaryModifier;
+
+    iaState.multiplier = 1;
+    iaState.temporaryModifier = 0;
+
+    scoreIA += delta;
+    if (delta >= 0) {
+        dernierResultatIA = "IA " + PredictionEngine::name(predictionIA) + ": Reussi +" + std::to_string(delta);
+    } else {
+        dernierResultatIA = "IA " + PredictionEngine::name(predictionIA) + ": Rate " + std::to_string(delta) + " pts";
+    }
+}
+
+void Game::appliquerJokerIASolo(JokerAction action) {
+    auto& iaState = players[1];
+    auto it = std::find(iaState.jokers.begin(), iaState.jokers.end(), action);
+    if (it == iaState.jokers.end()) {
+        return;
+    }
+
+    iaState.jokers.erase(it);
+    auto joker = createJokerEffect(action);
+    if (!joker) {
+        return;
+    }
+
+    std::string message;
+    joker->apply(players, 2, paquet, index, rng, false, false, message);
 }
 
 void Game::configurerFinPartieSolo(std::string& titre, std::string& detail, sf::Color& couleur) const {
