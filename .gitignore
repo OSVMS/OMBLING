@@ -2,3 +2,5 @@ compile.sh
 app
 .vscode/c_cpp_properties.json
 build_macos/
+.DS_Store
+**/.DS_Store

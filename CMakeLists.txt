@@ -15,22 +15,32 @@ set(BUILD_SHARED_LIBS ON)
 find_package(SFML CONFIG REQUIRED COMPONENTS Graphics Window System Network)
 
 add_executable(app
-    main.cpp
-    game.cpp
-    game_mode_test.cpp
-    game_mode_solo.cpp
-    game_mode_multi.cpp
-    turn_resolver.cpp
-    input_controller.cpp
-    render_controller.cpp
-    prediction_engine.cpp
-    ai_strategy.cpp
-    ai_easy.cpp
-    ai_medium.cpp
-    ai_hard.cpp
-    joker_effect.cpp
-    ui_helpers.cpp
-    carte.cpp
+    src/main.cpp
+    src/core/game.cpp
+    src/core/game_mode_test.cpp
+    src/core/game_mode_solo.cpp
+    src/core/game_mode_multi.cpp
+    src/core/turn_resolver.cpp
+    src/core/prediction_engine.cpp
+    src/ui/input_controller.cpp
+    src/ui/render_controller.cpp
+    src/ui/ui_helpers.cpp
+    src/ai/ai_strategy.cpp
+    src/ai/ai_easy.cpp
+    src/ai/ai_medium.cpp
+    src/ai/ai_hard.cpp
+    src/jokers/joker_effect.cpp
+    src/model/carte.cpp
+)
+
+target_include_directories(app
+    PRIVATE
+        src
+        src/core
+        src/ui
+        src/ai
+        src/jokers
+        src/model
 )
 
 target_link_libraries(app
